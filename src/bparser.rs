@@ -8,13 +8,13 @@ enum State {
     Payload,
 }
 
-struct Protocol<'a> {
+pub struct Protocol<'a> {
     prefix: &'a [u8],
     prefix_size: u8,
     payload_size: u8,
 }
 
-struct Parser<'a> {
+pub struct Parser<'a> {
     buffer: [u8; BUFFER_SIZE],
     state: State,
     protocol: &'a Protocol<'a>,
@@ -25,17 +25,26 @@ struct Parser<'a> {
 }
 
 impl<'a> Protocol<'a> {
-    pub fn init(&mut self, prefix: &'a [u8], prefix_size: u8, payload_size: u8) {
-        self.prefix = prefix;
-        self.prefix_size = prefix_size;
-        self.payload_size = payload_size;
+    pub fn new(prefix: &'a [u8], prefix_size: u8, payload_size: u8) -> Self {
+        Self {
+            prefix,
+            prefix_size,
+            payload_size
+        }
     }
 }
 
 impl<'a> Parser<'a> {
-    pub fn init(&mut self, protocol: &'a Protocol) {
-        self.state = State::Prefix;
-        self.protocol = protocol;
+    pub fn new(protocol: &'a Protocol) -> Self {
+        Self {
+            buffer: [0; BUFFER_SIZE],
+            state: State::Prefix,
+            protocol: protocol,
+            data_size: 0,
+            bytes_read: 0,
+            bytes_need_read: 0,
+            buffer_position: 0
+        }
     }
 
     fn reset(&mut self) {
