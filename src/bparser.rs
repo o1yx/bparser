@@ -18,7 +18,7 @@ pub struct Parser<'a> {
     buffer: [u8; BUFFER_SIZE],
     state: State,
     protocol: &'a Protocol<'a>,
-    data_size: u8,
+    data_size: usize,
     bytes_read: u8,
     bytes_need_read: u8,
     buffer_position: usize,
@@ -72,7 +72,7 @@ impl<'a> Parser<'a> {
         self.state = new_state;
     }
 
-    fn task(&mut self, data_byte: &'a u8) -> Option<u8> {
+    pub fn task(&mut self, data_byte: &'a u8) -> Option<&[u8]> {
         match self.state {
             State::Prefix => {
                 self.bytes_need_read = self.protocol.prefix_size;
@@ -95,7 +95,7 @@ impl<'a> Parser<'a> {
                 if self.bytes_need_read == 0 {
                     self.change_state(State::Prefix);
                     self.bytes_need_read = self.protocol.prefix_size;
-                    return Some(self.data_size);
+                    return Some(&self.buffer[..self.data_size]);
                 }
 
                 return None;
