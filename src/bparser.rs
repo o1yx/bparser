@@ -69,7 +69,7 @@ impl<'a> Parser<'a> {
                 self.bytes_need_read = self.protocol.prefix_size;
                 self.add_to_buffer(data_byte);
 
-                if self.protocol.prefix[..self.buffer_position] != &self.buffer[..self.buffer_position] {
+                if &self.protocol.prefix[..self.buffer_position] != &self.buffer[..self.buffer_position] {
                     self.reset();
                     return None;
                 } else if self.bytes_read == self.protocol.prefix_size {
