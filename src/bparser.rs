@@ -43,7 +43,8 @@ impl<'a> Parser<'a> {
             data_size: 0,
             bytes_read: 0,
             bytes_need_read: 0,
-            buffer_position: 0
+            buffer_position: 0,
+            offset: 0
         }
     }
 
@@ -76,9 +77,16 @@ impl<'a> Parser<'a> {
                 self.bytes_need_read = self.protocol.prefix_size;
                 self.add_to_buffer(data_byte);
 
-                if &self.protocol.prefix[..self.buffer_position] != &self.buffer[..self.buffer_position] {
-                    self.reset();
-                    return None;
+                if &self.buffer[..self.buffer_position] != &self.protocol.prefix[..self.buffer_position] {
+                    if &self.buffer[1..self.buffer_position] == &self.protocol.prefix[..self.buffer_position - 1] {
+                        self.buffer[self.buffer_position - 1] = self.buffer[self.buffer_position - 1];
+                        self.bytes_read -= 1;
+                        self.bytes_need_read += 1;
+                        self.buffer_position -= 1;
+                    } else {
+                        self.reset();
+                        return None;
+                    }
                 } else if self.bytes_read == self.protocol.prefix_size {
                     self.change_state(State::Payload);
                     self.bytes_need_read = self.protocol.payload_size;
