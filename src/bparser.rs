@@ -49,16 +49,14 @@ impl<'a> Parser<'a> {
 
     fn reset(&mut self) {
         self.state = State::Prefix;
-        self.data_size = 0;
         self.bytes_read = 0;
-        self.bytes_need_read = 0;
+        self.bytes_need_read = self.protocol.prefix_size;
         self.buffer_position = 0;
     }
 
     fn add_to_buffer(&mut self, data_byte: &'a u8) {
         if self.buffer_position < BUFFER_SIZE {
             self.buffer[self.buffer_position] = *data_byte;
-            self.data_size += 1;
             self.bytes_read += 1;
             self.bytes_need_read -= 1;
             self.buffer_position += 1;
@@ -93,8 +91,8 @@ impl<'a> Parser<'a> {
             State::Payload => {
                 self.add_to_buffer(data_byte);
                 if self.bytes_need_read == 0 {
-                    self.change_state(State::Prefix);
-                    self.bytes_need_read = self.protocol.prefix_size;
+                    self.data_size = self.buffer_position;
+                    self.reset();
                     return Some(&self.buffer[..self.data_size]);
                 }
 
