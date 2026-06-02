@@ -211,11 +211,38 @@ mod tests {
         let mut data = [0u8; 0xDD];
         data[0] = 0xAA;
         data[1] = 0xBB;
-
+        
         for elem in &data {
             if let Err(error) = parser.task(elem) {
                 assert_eq!(error, ParseError::BufferOverflow);
             }
         }
+    }
+
+    #[test]
+    fn variable_length() {
+        let protocol = Protocol::new(&[0xAA, 0xBB], 2, 0);
+        let mut parser = Parser::new(&protocol);
+
+        let data: [u8; 20] = [
+            0xDD, 0xAA,
+            0xAA, 0xBB, 0x04, 0x01, 0x02, 0x03, 0x04,
+            0x44, 0x45,
+            0xAA, 0xBB, 0x04, 0x01, 0x02, 0x03, 0x04,
+            0x33, 0x33
+        ];
+
+        let mut messages_received = 0;
+
+        for elem in &data {
+            if let Ok(payload) = parser.task(elem) {
+                if !payload.is_empty() {
+                    assert_eq!(payload, [0xAA, 0xBB, 0x04, 0x01, 0x02, 0x03, 0x04]);
+                    messages_received += 1;
+                }
+            }
+        }
+
+        assert_eq!(messages_received, 2);
     }
 }
