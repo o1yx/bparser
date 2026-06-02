@@ -152,4 +152,20 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn buffer_overflow() {
+        let protocol = Protocol::new(&[0xAA, 0xBB], 2, 300);
+        let mut  parser = Parser::new(&protocol);
+
+        let mut data = [0u8; 0xDD];
+        data[0] = 0xAA;
+        data[1] = 0xBB;
+        println!("{:?}", data);
+        for elem in &data {
+            if let Err(error) = parser.task(elem) {
+                assert_eq!(error, ParseError::BufferOverflow);
+            }
+        }
+    }
 }
