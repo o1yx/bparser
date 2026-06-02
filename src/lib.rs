@@ -43,8 +43,7 @@ impl<'a> Parser<'a> {
             data_size: 0,
             bytes_read: 0,
             bytes_need_read: 0,
-            buffer_position: 0,
-            offset: 0
+            buffer_position: 0
         }
     }
 
@@ -107,5 +106,24 @@ impl<'a> Parser<'a> {
                 return None;
             }
         };
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn one_message() {
+        let protocol = Protocol::new(&[0xAA, 0xBB], 2, 4);
+        let mut  parser = Parser::new(&protocol);
+
+        let data: [u8; 6] = [0xAA, 0xBB, 0x01, 0x02, 0x03, 0x04];
+
+        for elem in &data {
+            if let Some(payload) = parser.task(elem) {
+                assert_eq!(payload, [0xAA, 0xBB, 0x01, 0x02, 0x03, 0x04]);
+            }
+        }
     }
 }
