@@ -15,8 +15,8 @@ pub enum ParseError {
 
 pub struct Protocol<'a> {
     prefix: &'a [u8],
-    prefix_size: u8,
-    payload_size: u8,
+    prefix_size: usize,
+    payload_size: usize,
 }
 
 pub struct Parser<'a> {
@@ -24,13 +24,13 @@ pub struct Parser<'a> {
     state: State,
     protocol: &'a Protocol<'a>,
     data_size: usize,
-    bytes_read: u8,
-    bytes_need_read: u8,
+    bytes_read: usize,
+    bytes_need_read: usize,
     buffer_position: usize,
 }
 
 impl<'a> Protocol<'a> {
-    pub fn new(prefix: &'a [u8], prefix_size: u8, payload_size: u8) -> Self {
+    pub fn new(prefix: &'a [u8], prefix_size: usize, payload_size: usize) -> Self {
         Self {
             prefix,
             prefix_size,
