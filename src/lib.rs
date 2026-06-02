@@ -7,6 +7,11 @@ enum State {
     Prefix,
     Payload,
 }
+#[derive(Debug, PartialEq)]
+pub enum ParseError {
+    InvalidPrefix,
+    BufferOverflow
+}
 
 pub struct Protocol<'a> {
     prefix: &'a [u8],
@@ -70,7 +75,7 @@ impl<'a> Parser<'a> {
         self.state = new_state;
     }
 
-    pub fn task(&mut self, data_byte: &'a u8) -> Option<&[u8]> {
+    pub fn task(&mut self, data_byte: &'a u8) -> Result<&[u8], ParseError> {
         match self.state {
             State::Prefix => {
                 self.bytes_need_read = self.protocol.prefix_size;
@@ -84,15 +89,15 @@ impl<'a> Parser<'a> {
                         self.buffer_position -= 1;
                     } else {
                         self.reset();
-                        return None;
+                        return Err(ParseError::InvalidPrefix);
                     }
                 } else if self.bytes_read == self.protocol.prefix_size {
                     self.change_state(State::Payload);
                     self.bytes_need_read = self.protocol.payload_size;
-                    return None;
+                    return Ok(&[]);
                 }
 
-                return None;
+                Ok(&[])
             },
 
             State::Payload => {
@@ -100,12 +105,12 @@ impl<'a> Parser<'a> {
                 if self.bytes_need_read == 0 {
                     self.data_size = self.buffer_position;
                     self.reset();
-                    return Some(&self.buffer[..self.data_size]);
+                    return Ok(&self.buffer[..self.data_size]);
                 }
 
-                return None;
+                Ok(&[])
             }
-        };
+        }
     }
 }
 
@@ -121,8 +126,24 @@ mod tests {
         let data: [u8; 6] = [0xAA, 0xBB, 0x01, 0x02, 0x03, 0x04];
 
         for elem in &data {
-            if let Some(payload) = parser.task(elem) {
-                assert_eq!(payload, [0xAA, 0xBB, 0x01, 0x02, 0x03, 0x04]);
+            if let Ok(payload) = parser.task(elem) {
+                if !payload.is_empty() {
+                    assert_eq!(payload, [0xAA, 0xBB, 0x01, 0x02, 0x03, 0x04]);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn invalid_prefix() {
+        let protocol = Protocol::new(&[0xAA, 0xBB], 2, 4);
+        let mut  parser = Parser::new(&protocol);
+
+        let data: [u8; 6] = [0xAA, 0xCC, 0x01, 0x02, 0x03, 0x04];
+
+        for elem in &data {
+            if let Err(error) = parser.task(elem) {
+                assert_eq!(error, ParseError::InvalidPrefix);
             }
         }
     }
