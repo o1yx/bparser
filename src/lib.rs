@@ -1,10 +1,13 @@
 // Парс сообщений типа:
-// prefix | payload
+// prefix | length | payload
+
+use std::mem;
 
 const BUFFER_SIZE: usize = 256;
 
 enum State {
     Prefix,
+    Length,
     Payload,
 }
 #[derive(Debug, PartialEq)]
@@ -95,12 +98,32 @@ impl<'a> Parser<'a> {
                         return Err(ParseError::InvalidPrefix);
                     }
                 } else if self.bytes_read == self.protocol.prefix_size {
-                    self.change_state(State::Payload);
-                    self.bytes_need_read = self.protocol.payload_size;
-                    return Ok(&[]);
+                    if self.protocol.payload_size == 0 {
+                        self.change_state(State::Length);
+                        self.bytes_need_read = mem::size_of::<u8>();
+                        return Ok(&[]);
+                    } else {
+                        self.change_state(State::Payload);
+                        self.bytes_need_read = self.protocol.payload_size;
+                        return Ok(&[]);
+                    }
                 }
 
                 Ok(&[])
+            },
+
+            State::Length => {
+                if let Err(error) = self.add_to_buffer(data_byte) {
+                    return Err(error);
+                }
+
+                if self.bytes_need_read == 0 {
+                    self.change_state(State::Payload);
+                    self.bytes_need_read = *data_byte as usize;
+                    return Ok(&[]);
+                }
+
+                return Ok(&[]);
             },
 
             State::Payload => {
