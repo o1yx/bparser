@@ -59,14 +59,15 @@ impl<'a> Parser<'a> {
         self.buffer_position = 0;
     }
 
-    fn add_to_buffer(&mut self, data_byte: &'a u8) {
+    fn add_to_buffer(&mut self, data_byte: &'a u8) -> Result<(), ParseError> {
         if self.buffer_position < BUFFER_SIZE {
             self.buffer[self.buffer_position] = *data_byte;
             self.bytes_read += 1;
             self.bytes_need_read -= 1;
             self.buffer_position += 1;
+            Ok(())
         } else {
-            panic!("Buffer overflow")  // Добавить обработку ошибки переполнения буфера
+            Err(ParseError::BufferOverflow)
         }
     }
 
@@ -79,7 +80,9 @@ impl<'a> Parser<'a> {
         match self.state {
             State::Prefix => {
                 self.bytes_need_read = self.protocol.prefix_size;
-                self.add_to_buffer(data_byte);
+                if let Err(error) = self.add_to_buffer(data_byte) {
+                    return Err(error);
+                }
 
                 if &self.buffer[..self.buffer_position] != &self.protocol.prefix[..self.buffer_position] {
                     if &self.buffer[1..self.buffer_position] == &self.protocol.prefix[..self.buffer_position - 1] {
@@ -101,7 +104,9 @@ impl<'a> Parser<'a> {
             },
 
             State::Payload => {
-                self.add_to_buffer(data_byte);
+                if let Err(error) = self.add_to_buffer(data_byte) {
+                    return Err(error);
+                }
                 if self.bytes_need_read == 0 {
                     self.data_size = self.buffer_position;
                     self.reset();
