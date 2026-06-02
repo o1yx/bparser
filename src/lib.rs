@@ -89,7 +89,7 @@ impl<'a> Parser<'a> {
 
                 if &self.buffer[..self.buffer_position] != &self.protocol.prefix[..self.buffer_position] {
                     if &self.buffer[1..self.buffer_position] == &self.protocol.prefix[..self.buffer_position - 1] {
-                        self.buffer[self.buffer_position - 1] = self.buffer[self.buffer_position - 1];
+                        self.buffer[self.buffer_position - 1] = self.buffer[self.buffer_position];
                         self.bytes_read -= 1;
                         self.bytes_need_read += 1;
                         self.buffer_position -= 1;
