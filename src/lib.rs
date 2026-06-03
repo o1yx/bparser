@@ -10,6 +10,7 @@ enum State {
     Length,
     Payload,
 }
+
 #[derive(Debug, PartialEq)]
 pub enum ParseError {
     InvalidPrefix,
