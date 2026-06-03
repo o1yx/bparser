@@ -133,7 +133,11 @@ impl<'a> Parser<'a> {
                 if self.bytes_need_read == 0 {
                     self.data_size = self.buffer_position;
                     self.reset();
-                    return Ok(&self.buffer[..self.data_size]);
+                    let mut offset: usize = 0;
+                    if self.protocol.payload_size == 0 {
+                        offset = 1;
+                    }
+                    return Ok(&self.buffer[self.protocol.prefix_size + offset..self.data_size]);
                 }
 
                 Ok(&[])
