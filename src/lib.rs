@@ -62,9 +62,9 @@ impl<'a> Parser<'a> {
         self.buffer_position = 0;
     }
 
-    fn add_to_buffer(&mut self, data_byte: &'a u8) -> Result<(), ParseError> {
+    fn add_to_buffer(&mut self, data_byte: u8) -> Result<(), ParseError> {
         if self.buffer_position < BUFFER_SIZE {
-            self.buffer[self.buffer_position] = *data_byte;
+            self.buffer[self.buffer_position] = data_byte;
             self.bytes_read += 1;
             self.bytes_need_read -= 1;
             self.buffer_position += 1;
@@ -79,7 +79,7 @@ impl<'a> Parser<'a> {
         self.state = new_state;
     }
 
-    pub fn task(&mut self, data_byte: &'a u8) -> Result<&[u8], ParseError> {
+    pub fn task(&mut self, data_byte: u8) -> Result<&[u8], ParseError> {
         match self.state {
             State::Prefix => {
                 self.bytes_need_read = self.protocol.prefix_size;
@@ -119,7 +119,7 @@ impl<'a> Parser<'a> {
 
                 if self.bytes_need_read == 0 {
                     self.change_state(State::Payload);
-                    self.bytes_need_read = *data_byte as usize;
+                    self.bytes_need_read = data_byte as usize;
                     return Ok(&[]);
                 }
 
@@ -157,7 +157,7 @@ mod tests {
 
         let data: [u8; 6] = [0xAA, 0xBB, 0x01, 0x02, 0x03, 0x04];
 
-        for elem in &data {
+        for elem in data {
             if let Ok(payload) = parser.task(elem) {
                 if !payload.is_empty() {
                     assert_eq!(payload, [0x01, 0x02, 0x03, 0x04]);
@@ -181,7 +181,7 @@ mod tests {
 
         let mut messages_received = 0;
 
-        for elem in &data {
+        for elem in data {
             if let Ok(payload) = parser.task(elem) {
                 if !payload.is_empty() {
                     assert_eq!(payload, [0x01, 0x02, 0x03, 0x04]);
@@ -200,7 +200,7 @@ mod tests {
 
         let data: [u8; 6] = [0xAA, 0xCC, 0x01, 0x02, 0x03, 0x04];
 
-        for elem in &data {
+        for elem in data {
             if let Err(error) = parser.task(elem) {
                 assert_eq!(error, ParseError::InvalidPrefix);
             }
@@ -216,7 +216,7 @@ mod tests {
         data[0] = 0xAA;
         data[1] = 0xBB;
         
-        for elem in &data {
+        for elem in data {
             if let Err(error) = parser.task(elem) {
                 assert_eq!(error, ParseError::BufferOverflow);
             }
@@ -238,7 +238,7 @@ mod tests {
 
         let mut messages_received = 0;
 
-        for elem in &data {
+        for elem in data {
             if let Ok(payload) = parser.task(elem) {
                 if !payload.is_empty() {
                     assert_eq!(payload, [0x01, 0x02, 0x03, 0x04]);
