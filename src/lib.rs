@@ -160,7 +160,7 @@ mod tests {
         for elem in &data {
             if let Ok(payload) = parser.task(elem) {
                 if !payload.is_empty() {
-                    assert_eq!(payload, [0xAA, 0xBB, 0x01, 0x02, 0x03, 0x04]);
+                    assert_eq!(payload, [0x01, 0x02, 0x03, 0x04]);
                 }
             }
         }
@@ -184,7 +184,7 @@ mod tests {
         for elem in &data {
             if let Ok(payload) = parser.task(elem) {
                 if !payload.is_empty() {
-                    assert_eq!(payload, [0xAA, 0xBB, 0x01, 0x02, 0x03, 0x04]);
+                    assert_eq!(payload, [0x01, 0x02, 0x03, 0x04]);
                     messages_received += 1;
                 }
             }
@@ -241,7 +241,7 @@ mod tests {
         for elem in &data {
             if let Ok(payload) = parser.task(elem) {
                 if !payload.is_empty() {
-                    assert_eq!(payload, [0xAA, 0xBB, 0x04, 0x01, 0x02, 0x03, 0x04]);
+                    assert_eq!(payload, [0x01, 0x02, 0x03, 0x04]);
                     messages_received += 1;
                 }
             }
