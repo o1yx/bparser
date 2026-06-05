@@ -4,6 +4,7 @@ version = "0.1.0"
 authors = ["Alexey Sharygin <sharyginn.09@gmail.com>"]
 description = "Binary protocol parser"
 license = "MIT or Apache-2.0"
+repository = "https://github.com/o1yx/bparser"
 edition = "2024"
 
 [dependencies]
