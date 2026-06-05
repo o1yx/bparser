@@ -1,28 +1,35 @@
-// Парс сообщений типа:
-// prefix | length | payload
+//! # bparser
+//! 
+//! 'bparser' - is a binary protocol parser designed for parsing messages like: prefix | length (optional) | payload
 
 use std::mem;
 
 const BUFFER_SIZE: usize = 256;
 
+/// Enumeration of states of the parser state machine
 enum State {
     Prefix,
     Length,
     Payload,
 }
 
+/// Enumeration of parsing errors 
 #[derive(Debug, PartialEq)]
 pub enum ParseError {
     InvalidPrefix,
     BufferOverflow
 }
 
+/// Protocol structure
+/// # payload_size = 0
+/// if the payload_size is 0 then the parser will take the payload length from the message
 pub struct Protocol<'a> {
     prefix: &'a [u8],
     prefix_size: usize,
     payload_size: usize,
 }
 
+/// Parser structure
 pub struct Parser<'a> {
     buffer: [u8; BUFFER_SIZE],
     state: State,
@@ -80,6 +87,7 @@ impl<'a> Parser<'a> {
         self.state = new_state;
     }
 
+    /// The main function of the parser
     pub fn task(&mut self, data_byte: u8) -> Result<&[u8], ParseError> {
         match self.state {
             State::Prefix => {
