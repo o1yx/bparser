@@ -29,17 +29,6 @@ pub struct Protocol<'a> {
     payload_size: usize,
 }
 
-/// Parser structure
-pub struct Parser<'a> {
-    buffer: [u8; BUFFER_SIZE],
-    state: State,
-    protocol: &'a Protocol<'a>,
-    data_size: usize,
-    bytes_read: usize,
-    bytes_need_read: usize,
-    buffer_position: usize,
-}
-
 impl<'a> Protocol<'a> {
     pub fn new(prefix: &'a [u8], prefix_size: usize, payload_size: usize) -> Self {
         Self {
