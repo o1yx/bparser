@@ -82,6 +82,7 @@ impl<'a> Parser<'a> {
             State::Prefix => {
                 self.bytes_need_read = self.protocol.prefix_size;
                 if let Err(error) = self.add_to_buffer(data_byte) {
+                    self.reset();
                     return Err(error);
                 }
 
@@ -112,6 +113,7 @@ impl<'a> Parser<'a> {
 
             State::Length => {
                 if let Err(error) = self.add_to_buffer(data_byte) {
+                    self.reset();
                     return Err(error);
                 }
 
@@ -126,16 +128,21 @@ impl<'a> Parser<'a> {
 
             State::Payload => {
                 if let Err(error) = self.add_to_buffer(data_byte) {
+                    self.reset();
                     return Err(error);
                 }
                 if self.bytes_need_read == 0 {
                     self.data_size = self.buffer_position;
-                    self.reset();
                     let mut offset: usize = 0;
-                    if self.protocol.payload_size == 0 {
+                    let pr_lock: isize = self.protocol_lock;
+                    self.reset();
+
+                    if self.protocols[pr_lock as usize].payload_size == 0
+                    {
                         offset = 1;
                     }
-                    return Ok(&self.buffer[self.protocol.prefix_size + offset..self.data_size]);
+
+                    return Ok(&self.buffer[self.protocols[pr_lock as usize].prefix_size + offset..self.data_size]);
                 }
 
                 Ok(&[])
