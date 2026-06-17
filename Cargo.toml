@@ -1,6 +1,6 @@
 [package]
 name = "bparser"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Alexey Sharygin <sharyginn.09@gmail.com>"]
 description = "Binary protocol parser"
 license = "MIT or Apache-2.0"
