@@ -193,8 +193,8 @@ mod tests {
 
     #[test]
     fn one_message() {
-        let protocol = Protocol::new(&[0xAA, 0xBB], 2, 4);
-        let mut  parser = Parser::new(&protocol);
+        let mut  parser = Parser::new();
+        parser.add_protocol(&[0xAA, 0xBB], 2, 4);
 
         let data: [u8; 6] = [0xAA, 0xBB, 0x01, 0x02, 0x03, 0x04];
 
@@ -209,8 +209,8 @@ mod tests {
 
     #[test]
     fn some_messages() {
-        let protocol = Protocol::new(&[0xAA, 0xBB], 2, 4);
-        let mut  parser = Parser::new(&protocol);
+        let mut  parser = Parser::new();
+        parser.add_protocol(&[0xAA, 0xBB], 2, 4);
 
         let data: [u8; 18] = [
             0xDD, 0xAA,
@@ -236,8 +236,8 @@ mod tests {
 
     #[test]
     fn invalid_prefix() {
-        let protocol = Protocol::new(&[0xAA, 0xBB], 2, 4);
-        let mut  parser = Parser::new(&protocol);
+        let mut  parser = Parser::new();
+        parser.add_protocol(&[0xAA, 0xBB], 2, 4);
 
         let data: [u8; 6] = [0xAA, 0xCC, 0x01, 0x02, 0x03, 0x04];
 
@@ -250,8 +250,8 @@ mod tests {
 
     #[test]
     fn buffer_overflow() {
-        let protocol = Protocol::new(&[0xAA, 0xBB], 2, 300);
-        let mut  parser = Parser::new(&protocol);
+        let mut  parser = Parser::new();
+        parser.add_protocol(&[0xAA, 0xBB], 2, 300);
 
         let mut data = [0u8; 0xDD];
         data[0] = 0xAA;
@@ -266,8 +266,8 @@ mod tests {
 
     #[test]
     fn variable_length() {
-        let protocol = Protocol::new(&[0xAA, 0xBB], 2, 0);
-        let mut parser = Parser::new(&protocol);
+        let mut parser = Parser::new();
+        parser.add_protocol(&[0xAA, 0xBB], 2, 0);
 
         let data: [u8; 20] = [
             0xDD, 0xAA,
@@ -283,6 +283,36 @@ mod tests {
             if let Ok(payload) = parser.task(elem) {
                 if !payload.is_empty() {
                     assert_eq!(payload, [0x01, 0x02, 0x03, 0x04]);
+                    messages_received += 1;
+                }
+            }
+        }
+
+        assert_eq!(messages_received, 2);
+    }
+
+    #[test]
+    fn multiple_protocols() {
+        let mut parser = Parser::new();
+        parser.add_protocol(&[0xAA, 0xBB], 2, 4);
+        parser.add_protocol(&[0xCC, 0xDD], 2, 4);
+
+        let data: [u8; 18] = [
+            0xBB, 0xAA,
+            0xAA, 0xBB, 0x01, 0x02, 0x03, 0x04,
+            0x44, 0x45,
+            0xCC, 0xDD, 0x11, 0x22, 0x33, 0x44,
+            0x33, 0x33
+        ];
+
+        let mut messages_received = 0;
+
+        for elem in data {
+            println!("{:#X}, lock: {}", elem, parser.protocol_lock);
+            if let Ok(payload) = parser.task(elem) {
+                if !payload.is_empty() {
+                    println!("Payload:");
+                    println!("{:?}", payload);
                     messages_received += 1;
                 }
             }
