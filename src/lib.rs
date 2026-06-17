@@ -39,23 +39,45 @@ impl<'a> Protocol<'a> {
     }
 }
 
+/// Parser structure
+pub struct Parser<'a> {
+    buffer: [u8; BUFFER_SIZE],
+    state: State,
+    protocols: Vec<Protocol<'a>>,
+    num_of_protocols: usize,
+    protocol_lock: isize,
+    data_size: usize,
+    bytes_read: usize,
+    bytes_need_read: usize,
+    buffer_position: usize,
+}
+
 impl<'a> Parser<'a> {
-    pub fn new(protocol: &'a Protocol) -> Self {
+    pub fn new() -> Self {
         Self {
             buffer: [0; BUFFER_SIZE],
             state: State::Prefix,
-            protocol: protocol,
+            protocols: Vec::new(),
+            num_of_protocols: 0,
+            protocol_lock: -1,
             data_size: 0,
             bytes_read: 0,
-            bytes_need_read: 0,
+            bytes_need_read: 1,
             buffer_position: 0
         }
     }
 
+    pub fn add_protocol(&mut self, prefix: &'a [u8], prefix_size: usize, payload_size: usize) {
+        let protocol = Protocol::new(prefix, prefix_size, payload_size);
+        self.protocols.push(protocol);
+        self.num_of_protocols += 1;
+    }
+
     fn reset(&mut self) {
         self.state = State::Prefix;
+        self.protocol_lock = -1;
         self.bytes_read = 0;
-        self.bytes_need_read = self.protocol.prefix_size;
+        self.bytes_need_read = 1;
         self.buffer_position = 0;
     }
 
@@ -80,31 +102,44 @@ impl<'a> Parser<'a> {
     pub fn task(&mut self, data_byte: u8) -> Result<&[u8], ParseError> {
         match self.state {
             State::Prefix => {
-                self.bytes_need_read = self.protocol.prefix_size;
                 if let Err(error) = self.add_to_buffer(data_byte) {
                     self.reset();
                     return Err(error);
                 }
 
-                if &self.buffer[..self.buffer_position] != &self.protocol.prefix[..self.buffer_position] {
-                    if &self.buffer[1..self.buffer_position] == &self.protocol.prefix[..self.buffer_position - 1] {
-                        self.buffer[self.buffer_position - 1] = self.buffer[self.buffer_position];
-                        self.bytes_read -= 1;
-                        self.bytes_need_read += 1;
-                        self.buffer_position -= 1;
-                    } else {
+                if self.protocol_lock == -1 {  // Ищем один из префиксов
+                    for (protocol_index, protocol) in self.protocols.iter().enumerate() {
+                        if self.buffer[0] == protocol.prefix[0] {
+                            self.protocol_lock = protocol_index as isize;
+                            self.bytes_need_read = protocol.prefix_size - 1;
+                            return Ok(&[]);
+                        }
+                    }
+                    self.reset();
+                } else {  // Если префикс найден
+                    if self.buffer[..self.buffer_position] != self.protocols[self.protocol_lock as usize].prefix[..self.buffer_position] {
+                        for (protocol_index, protocol) in self.protocols.iter().enumerate() {
+                            if self.buffer[1..self.buffer_position] == protocol.prefix[..self.buffer_position - 1] {
+                                self.protocol_lock = protocol_index as isize;
+                                self.buffer[self.buffer_position - 1] = self.buffer[self.buffer_position];
+                                self.bytes_read -= 1;
+                                self.bytes_need_read += 1;
+                                self.buffer_position -= 1;
+                                return Ok(&[]);
+                            }
+                        }
                         self.reset();
                         return Err(ParseError::InvalidPrefix);
-                    }
-                } else if self.bytes_read == self.protocol.prefix_size {
-                    if self.protocol.payload_size == 0 {
-                        self.change_state(State::Length);
-                        self.bytes_need_read = mem::size_of::<u8>();
-                        return Ok(&[]);
-                    } else {
-                        self.change_state(State::Payload);
-                        self.bytes_need_read = self.protocol.payload_size;
-                        return Ok(&[]);
+                    } else if self.bytes_read == self.protocols[self.protocol_lock as usize].prefix_size {
+                        if self.protocols[self.protocol_lock as usize].payload_size == 0 {
+                            self.change_state(State::Length);
+                            self.bytes_need_read = mem::size_of::<u8>();
+                            return Ok(&[]);
+                        } else {
+                            self.change_state(State::Payload);
+                            self.bytes_need_read = self.protocols[self.protocol_lock as usize].payload_size;
+                            return Ok(&[]);
+                        }
                     }
                 }
 
@@ -131,6 +166,7 @@ impl<'a> Parser<'a> {
                     self.reset();
                     return Err(error);
                 }
+
                 if self.bytes_need_read == 0 {
                     self.data_size = self.buffer_position;
                     let mut offset: usize = 0;
