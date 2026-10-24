@@ -2,23 +2,21 @@
 //! 
 //! 'bparser' - is a binary protocol parser designed for parsing messages like: prefix | length (optional) | payload
 
-use std::mem;
-
 const BUFFER_SIZE: usize = 256;
 
 /// Enumeration of states of the parser state machine
+#[derive(Debug)]
 enum State {
     SearchingPrefix,
-    ValidatingPrefix(usize),
-    ReadingLength(usize),
-    ReadingPayload(usize),
+    ValidatingPrefix,
+    ReadingLength,
+    ReadingPayload,
 }
 
 /// Enumeration of parsing errors 
 #[derive(Debug, PartialEq)]
 pub enum ParseError {
-    InvalidPrefix,
-    BufferOverflow
+    BufferOverflow,
 }
 
 /// Protocol structure
@@ -26,15 +24,13 @@ pub enum ParseError {
 /// if the payload_size is 0 then the parser will take the payload length from the message
 pub struct Protocol<'a> {
     prefix: &'a [u8],
-    prefix_size: usize,
     payload_size: usize,
 }
 
 impl<'a> Protocol<'a> {
-    pub fn new(prefix: &'a [u8], prefix_size: usize, payload_size: usize) -> Self {
+    pub fn new(prefix: &'a [u8], payload_size: usize) -> Self {
         Self {
             prefix,
-            prefix_size,
             payload_size
         }
     }
@@ -43,135 +39,123 @@ impl<'a> Protocol<'a> {
 /// Parser structure
 pub struct Parser<'a> {
     buffer: [u8; BUFFER_SIZE],
+    buffer_position: usize,
     state: State,
     protocols: Vec<Protocol<'a>>,
-    num_of_protocols: usize,
-    // protocol_lock: isize,
-    data_size: usize,
-    bytes_read: usize,
-    bytes_need_read: usize,
-    buffer_position: usize,
+    active_protocol_idx: Option<usize>,
+    expected_len: usize,
+}
+
+impl<'a> Default for Parser<'a> {
+    fn default() -> Self {
+        Self {
+            buffer: [0; BUFFER_SIZE],
+            buffer_position: 0,
+            state: State::SearchingPrefix,
+            protocols: Vec::new(),
+            active_protocol_idx: None,
+            expected_len: 0,
+        }
+    }
 }
 
 impl<'a> Parser<'a> {
-    pub fn new() -> Self {
-        Self {
-            buffer: [0; BUFFER_SIZE],
-            state: State::SearchingPrefix,
-            protocols: Vec::new(),
-            num_of_protocols: 0,
-            // protocol_lock: -1,
-            data_size: 0,
-            bytes_read: 0,
-            bytes_need_read: 1,
-            buffer_position: 0
+    pub fn add_protocol(&mut self, prefix: &'a [u8], payload_size: usize) {
+        if !prefix.is_empty() {
+            self.protocols.push(Protocol::new(prefix, payload_size));
         }
-    }
-
-    pub fn add_protocol(&mut self, prefix: &'a [u8], prefix_size: usize, payload_size: usize) {
-        let protocol = Protocol::new(prefix, prefix_size, payload_size);
-        self.protocols.push(protocol);
-        self.num_of_protocols += 1;
     }
 
     fn reset(&mut self) {
-        self.state = State::SearchingPrefix;
-        // self.protocol_lock = -1;
-        self.bytes_read = 0;
-        self.bytes_need_read = 1;
         self.buffer_position = 0;
-    }
-
-    fn add_to_buffer(&mut self, data_byte: u8) -> Result<(), ParseError> {
-        if self.buffer_position < BUFFER_SIZE {
-            self.buffer[self.buffer_position] = data_byte;
-            self.bytes_read += 1;
-            self.bytes_need_read -= 1;
-            self.buffer_position += 1;
-            Ok(())
-        } else {
-            Err(ParseError::BufferOverflow)
-        }
-    }
-
-    fn change_state(&mut self, new_state: State) {
-        self.bytes_read = 0;
-        self.state = new_state;
+        self.state = State::SearchingPrefix;
+        self.active_protocol_idx = None;
+        self.expected_len = 0;
     }
 
     /// The main function of the parser
     pub fn task(&mut self, data_byte: u8) -> Result<&[u8], ParseError> {
-        if let Err(error) = self.add_to_buffer(data_byte) {
+        if self.buffer_position >= BUFFER_SIZE {
             self.reset();
-            return Err(error);
+            return Err(ParseError::BufferOverflow);
         }
+
+        self.buffer[self.buffer_position] = data_byte;
+        self.buffer_position += 1;
 
         match self.state {
             State::SearchingPrefix => {
-                for (protocol_index, protocol) in self.protocols.iter().enumerate() {
-                    if self.buffer[0] == protocol.prefix[0] {
-                        self.bytes_need_read = protocol.prefix_size - 1;
-                        self.change_state(State::ValidatingPrefix(protocol_index));
-                        self.bytes_read = 1;
+                if let Some(protocol_idx) = self.protocols.iter().position(|pr| self.buffer[0] == pr.prefix[0]) {
+                    self.active_protocol_idx = Some(protocol_idx);
+                    self.state = State::ValidatingPrefix;
+                    return Ok(&[]);
+                }
+
+                self.reset();
+                Ok(&[])
+            },
+
+            State::ValidatingPrefix => {
+                let protocol_idx = self.active_protocol_idx.unwrap();
+                let protocol = &self.protocols[protocol_idx];
+
+                if self.buffer[..self.buffer_position] == protocol.prefix[..self.buffer_position] {
+                    if self.buffer_position == protocol.prefix.len() {
+                        if protocol.payload_size == 0 {
+                            self.state = State::ReadingLength;
+                        } else {
+                            self.expected_len = protocol.prefix.len() + protocol.payload_size;
+                            self.state = State::ReadingPayload;
+                        }
+                    }
+                    return Ok(&[]);
+                }
+
+                for len in (1..self.buffer_position).rev() {
+                    if let Some(protocol_idx) = self.protocols.iter().position(|pr| len <= pr.prefix.len() && self.buffer[self.buffer_position - len .. self.buffer_position] == pr.prefix[..len]) {
+                        self.buffer.copy_within(self.buffer_position - len .. self.buffer_position, 0);
+                        self.buffer_position = len;
+                        self.active_protocol_idx = Some(protocol_idx);
+                        self.state = State::ValidatingPrefix;
                         return Ok(&[]);
                     }
                 }
 
-                self.reset();
-                return Ok(&[]);
-            },
+                self.buffer[0] = data_byte;
+                self.buffer_position = 1;
+                self.state = State::SearchingPrefix;
 
-            State::ValidatingPrefix(protocol_index) => {
-                if self.buffer[..self.buffer_position] != self.protocols[protocol_index].prefix[..self.buffer_position] {
-                    for (index, protocol) in self.protocols.iter().enumerate() {
-                        if self.buffer[1..self.buffer_position] == protocol.prefix[..self.buffer_position - 1] {
-                            self.buffer[self.buffer_position - 1] = self.buffer[self.buffer_position];
-                            self.buffer_position -= 1;
-                            self.change_state(State::ValidatingPrefix(index));
-                            self.bytes_need_read = self.protocols[index].prefix_size - 1;
-                            self.bytes_read = 1;
-                            return Ok(&[]);
-                        }
-
-                        self.reset();
-                        return Err(ParseError::InvalidPrefix);
-                    }
-                } else if self.bytes_read == self.protocols[protocol_index].prefix_size {
-                    if self.protocols[protocol_index].payload_size == 0 {
-                        self.change_state(State::ReadingLength(protocol_index));
-                        self.bytes_need_read = mem::size_of::<u8>();
-                    } else {
-                        self.change_state(State::ReadingPayload(protocol_index));
-                        self.bytes_need_read = self.protocols[protocol_index].payload_size;
-                    }
-
+                if let Some(protocol_idx) = self.protocols.iter().position(|pr| self.buffer[0] == pr.prefix[0]) {
+                    self.active_protocol_idx = Some(protocol_idx);
+                    self.state = State::ValidatingPrefix;
                     return Ok(&[]);
                 }
 
-                return Ok(&[]);
+                self.reset();
+                Ok(&[])
             },
 
-            State::ReadingLength(protocol_index) => {
-                if self.bytes_need_read == 0 {
-                    self.change_state(State::ReadingPayload(protocol_index));
-                    self.bytes_need_read = data_byte as usize;
+            State::ReadingLength => {
+                let idx = self.active_protocol_idx.unwrap();
+                let protocol = &self.protocols[idx];
+
+                self.expected_len = protocol.prefix.len() + 1 + data_byte as usize;
+
+                if self.expected_len > BUFFER_SIZE {
+                    self.reset();
+                    return Err(ParseError::BufferOverflow);
                 }
 
-                return Ok(&[]);
+                self.state = State::ReadingPayload;
+                Ok(&[])
             },
 
-            State::ReadingPayload(protocol_index) => {
-                if self.bytes_need_read == 0 {
-                    self.data_size = self.buffer_position;
-                    let mut offset: usize = 0;
+            State::ReadingPayload => {
+                if self.buffer_position == self.expected_len {
+                    let full_msg_len = self.buffer_position;
                     self.reset();
-
-                    if self.protocols[protocol_index].payload_size == 0
-                    {
-                        offset = 1;
-                    }
-
-                    return Ok(&self.buffer[self.protocols[protocol_index].prefix_size + offset..self.data_size]);
+                    let full_msg = &self.buffer[..full_msg_len];
+                    return Ok(full_msg);
                 }
 
                 Ok(&[])
@@ -186,24 +170,22 @@ mod tests {
 
     #[test]
     fn one_message() {
-        let mut  parser = Parser::new();
-        parser.add_protocol(&[0xAA, 0xBB], 2, 4);
+        let mut  parser = Parser::default();
+        parser.add_protocol(&[0xAA, 0xBB], 4);
 
         let data: [u8; 6] = [0xAA, 0xBB, 0x01, 0x02, 0x03, 0x04];
 
         for elem in data {
-            if let Ok(payload) = parser.task(elem) {
-                if !payload.is_empty() {
-                    assert_eq!(payload, [0x01, 0x02, 0x03, 0x04]);
-                }
+            if let Ok(msg) = parser.task(elem) && !msg.is_empty() {
+                assert_eq!(msg, [0xAA, 0xBB, 0x01, 0x02, 0x03, 0x04]);
             }
         }
     }
 
     #[test]
     fn some_messages() {
-        let mut  parser = Parser::new();
-        parser.add_protocol(&[0xAA, 0xBB], 2, 4);
+        let mut  parser = Parser::default();
+        parser.add_protocol(&[0xAA, 0xBB], 4);
 
         let data: [u8; 18] = [
             0xDD, 0xAA,
@@ -216,11 +198,9 @@ mod tests {
         let mut messages_received = 0;
 
         for elem in data {
-            if let Ok(payload) = parser.task(elem) {
-                if !payload.is_empty() {
-                    assert_eq!(payload, [0x01, 0x02, 0x03, 0x04]);
-                    messages_received += 1;
-                }
+            if let Ok(msg) = parser.task(elem) && !msg.is_empty() {
+                assert_eq!(msg, [0xAA, 0xBB, 0x01, 0x02, 0x03, 0x04]);
+                messages_received += 1;
             }
         }
 
@@ -228,25 +208,11 @@ mod tests {
     }
 
     #[test]
-    fn invalid_prefix() {
-        let mut  parser = Parser::new();
-        parser.add_protocol(&[0xAA, 0xBB], 2, 4);
-
-        let data: [u8; 6] = [0xAA, 0xCC, 0x01, 0x02, 0x03, 0x04];
-
-        for elem in data {
-            if let Err(error) = parser.task(elem) {
-                assert_eq!(error, ParseError::InvalidPrefix);
-            }
-        }
-    }
-
-    #[test]
     fn buffer_overflow() {
-        let mut  parser = Parser::new();
-        parser.add_protocol(&[0xAA, 0xBB], 2, 300);
+        let mut  parser = Parser::default();
+        parser.add_protocol(&[0xAA, 0xBB], BUFFER_SIZE + 6);
 
-        let mut data = [0u8; 0xDD];
+        let mut data = [0u8; BUFFER_SIZE + 6];
         data[0] = 0xAA;
         data[1] = 0xBB;
         
@@ -259,8 +225,8 @@ mod tests {
 
     #[test]
     fn variable_length() {
-        let mut parser = Parser::new();
-        parser.add_protocol(&[0xAA, 0xBB], 2, 0);
+        let mut parser = Parser::default();
+        parser.add_protocol(&[0xAA, 0xBB], 0);
 
         let data: [u8; 20] = [
             0xDD, 0xAA,
@@ -273,11 +239,9 @@ mod tests {
         let mut messages_received = 0;
 
         for elem in data {
-            if let Ok(payload) = parser.task(elem) {
-                if !payload.is_empty() {
-                    assert_eq!(payload, [0x01, 0x02, 0x03, 0x04]);
-                    messages_received += 1;
-                }
+            if let Ok(msg) = parser.task(elem) && !msg.is_empty() {
+                assert_eq!(msg, [0xAA, 0xBB, 0x04, 0x01, 0x02, 0x03, 0x04]);
+                messages_received += 1;
             }
         }
 
@@ -286,9 +250,9 @@ mod tests {
 
     #[test]
     fn multiple_protocols() {
-        let mut parser = Parser::new();
-        parser.add_protocol(&[0xAA, 0xBB], 2, 4);
-        parser.add_protocol(&[0xCC, 0xDD, 0xFF], 3, 4);
+        let mut parser = Parser::default();
+        parser.add_protocol(&[0xAA, 0xBB], 4);
+        parser.add_protocol(&[0xCC, 0xDD, 0xFF], 4);
 
         let data: [u8; 19] = [
             0xBB, 0xAA,
@@ -301,13 +265,29 @@ mod tests {
         let mut messages_received = 0;
 
         for elem in data {
-            if let Ok(payload) = parser.task(elem) {
-                if !payload.is_empty() {
-                    messages_received += 1;
-                }
+            if let Ok(msg) = parser.task(elem) && !msg.is_empty() {
+                messages_received += 1;
             }
         }
 
         assert_eq!(messages_received, 2);
+    }
+
+    #[test]
+    fn overlap_with_long_prefix() {
+        let mut parser = Parser::default();
+        parser.add_protocol(&[0xAA, 0xBB, 0xCC], 2);
+
+        let data = [0xAA, 0xBB, 0xAA, 0xBB, 0xCC, 0x01, 0x02];
+
+        let mut messages_received = 0;
+        for elem in data {
+            if let Ok(msg) = parser.task(elem) && !msg.is_empty() {
+                assert_eq!(msg, [0xAA, 0xBB, 0xCC, 0x01, 0x02]);
+                messages_received += 1;
+            }
+        }
+
+        assert_eq!(messages_received, 1);
     }
 }
