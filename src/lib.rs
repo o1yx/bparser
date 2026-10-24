@@ -2,7 +2,12 @@
 //! 
 //! 'bparser' - is a binary protocol parser designed for parsing messages like: prefix | length (optional) | payload
 
+#![no_std]
+
+use heapless::Vec;
+
 const BUFFER_SIZE: usize = 256;
+const MAX_PROTOCOLS: usize = 8;
 
 /// Enumeration of states of the parser state machine
 #[derive(Debug)]
@@ -15,8 +20,9 @@ enum State {
 
 /// Enumeration of parsing errors 
 #[derive(Debug, PartialEq)]
-pub enum ParseError {
+pub enum ParserError {
     BufferOverflow,
+    ProtocolListIsFull,
 }
 
 /// Protocol structure
@@ -41,7 +47,7 @@ pub struct Parser<'a> {
     buffer: [u8; BUFFER_SIZE],
     buffer_position: usize,
     state: State,
-    protocols: Vec<Protocol<'a>>,
+    protocols: Vec<Protocol<'a>, MAX_PROTOCOLS>,
     active_protocol_idx: Option<usize>,
     expected_len: usize,
 }
@@ -60,10 +66,14 @@ impl<'a> Default for Parser<'a> {
 }
 
 impl<'a> Parser<'a> {
-    pub fn add_protocol(&mut self, prefix: &'a [u8], payload_size: usize) {
-        if !prefix.is_empty() {
-            self.protocols.push(Protocol::new(prefix, payload_size));
+    pub fn add_protocol(&mut self, prefix: &'a [u8], payload_size: usize) -> Result<(), ParserError> {
+        if prefix.is_empty() {
+            return Ok(());
         }
+
+        self.protocols
+            .push(Protocol::new(prefix, payload_size))
+            .map_err(|_| ParserError::ProtocolListIsFull)
     }
 
     fn reset(&mut self) {
@@ -74,10 +84,10 @@ impl<'a> Parser<'a> {
     }
 
     /// The main function of the parser
-    pub fn task(&mut self, data_byte: u8) -> Result<&[u8], ParseError> {
+    pub fn task(&mut self, data_byte: u8) -> Result<&[u8], ParserError> {
         if self.buffer_position >= BUFFER_SIZE {
             self.reset();
-            return Err(ParseError::BufferOverflow);
+            return Err(ParserError::BufferOverflow);
         }
 
         self.buffer[self.buffer_position] = data_byte;
@@ -143,7 +153,7 @@ impl<'a> Parser<'a> {
 
                 if self.expected_len > BUFFER_SIZE {
                     self.reset();
-                    return Err(ParseError::BufferOverflow);
+                    return Err(ParserError::BufferOverflow);
                 }
 
                 self.state = State::ReadingPayload;
@@ -171,7 +181,7 @@ mod tests {
     #[test]
     fn one_message() {
         let mut  parser = Parser::default();
-        parser.add_protocol(&[0xAA, 0xBB], 4);
+        parser.add_protocol(&[0xAA, 0xBB], 4).unwrap();
 
         let data: [u8; 6] = [0xAA, 0xBB, 0x01, 0x02, 0x03, 0x04];
 
@@ -185,7 +195,7 @@ mod tests {
     #[test]
     fn some_messages() {
         let mut  parser = Parser::default();
-        parser.add_protocol(&[0xAA, 0xBB], 4);
+        parser.add_protocol(&[0xAA, 0xBB], 4).unwrap();
 
         let data: [u8; 18] = [
             0xDD, 0xAA,
@@ -210,7 +220,7 @@ mod tests {
     #[test]
     fn buffer_overflow() {
         let mut  parser = Parser::default();
-        parser.add_protocol(&[0xAA, 0xBB], BUFFER_SIZE + 6);
+        parser.add_protocol(&[0xAA, 0xBB], BUFFER_SIZE + 6).unwrap();
 
         let mut data = [0u8; BUFFER_SIZE + 6];
         data[0] = 0xAA;
@@ -218,7 +228,7 @@ mod tests {
         
         for elem in data {
             if let Err(error) = parser.task(elem) {
-                assert_eq!(error, ParseError::BufferOverflow);
+                assert_eq!(error, ParserError::BufferOverflow);
             }
         }
     }
@@ -226,7 +236,7 @@ mod tests {
     #[test]
     fn variable_length() {
         let mut parser = Parser::default();
-        parser.add_protocol(&[0xAA, 0xBB], 0);
+        parser.add_protocol(&[0xAA, 0xBB], 0).unwrap();
 
         let data: [u8; 20] = [
             0xDD, 0xAA,
@@ -251,8 +261,8 @@ mod tests {
     #[test]
     fn multiple_protocols() {
         let mut parser = Parser::default();
-        parser.add_protocol(&[0xAA, 0xBB], 4);
-        parser.add_protocol(&[0xCC, 0xDD, 0xFF], 4);
+        parser.add_protocol(&[0xAA, 0xBB], 4).unwrap();
+        parser.add_protocol(&[0xCC, 0xDD, 0xFF], 4).unwrap();
 
         let data: [u8; 19] = [
             0xBB, 0xAA,
@@ -276,7 +286,7 @@ mod tests {
     #[test]
     fn overlap_with_long_prefix() {
         let mut parser = Parser::default();
-        parser.add_protocol(&[0xAA, 0xBB, 0xCC], 2);
+        parser.add_protocol(&[0xAA, 0xBB, 0xCC], 2).unwrap();
 
         let data = [0xAA, 0xBB, 0xAA, 0xBB, 0xCC, 0x01, 0x02];
 
